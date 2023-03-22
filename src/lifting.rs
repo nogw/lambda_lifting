@@ -86,10 +86,6 @@ impl Context {
             decls: vec![],
         }
     }
-
-    fn new_decl(&mut self, decl: Decl) {
-        self.decls.push(decl)
-    }
 }
 
 macro_rules! lam {
@@ -236,7 +232,7 @@ fn lifting(expr: Expr, context: &mut Context) -> Expr {
             let fresh = context.state.fresh();
             let body = lifting(*body, context);
             let decl = Decl(fresh.clone(), params, body);
-            context.new_decl(decl);
+            context.decls.push(decl);
             Expr::Var(fresh)
         }
         Expr::App(fun, arg) => {
