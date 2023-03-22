@@ -1,5 +1,5 @@
 use core::fmt;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
 pub enum Binary {
@@ -26,61 +26,69 @@ pub enum Expr {
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Expr::Var(sym) => write!(f, "{sym}"),
-            Expr::Int(int) => write!(f, "{int}"),
-            Expr::Bop(Binary::Add, left, right) => write!(f, "{left} + {right}"),
-            Expr::Bop(Binary::Sub, left, right) => write!(f, "{left} - {right}"),
-            Expr::App(lam, arg) => write!(f, "({lam} {arg})"),
+            Expr::Var(sym) => write!(f, "{}", sym),
+            Expr::Int(int) => write!(f, "{}", int),
+            Expr::Bop(Binary::Add, left, right) => write!(f, "({} + {})", left, right),
+            Expr::Bop(Binary::Sub, left, right) => write!(f, "({} - {})", left, right),
+            Expr::App(lam, arg) => write!(f, "({} {})", lam, arg),
             Expr::Abs(params, body) => {
                 let params: Vec<String> = params.iter().map(|t| format!("{}", t)).collect();
-                let params = params.join(",");
+                let params = params.join(", ");
                 write!(f, "lambda [{}] => {}", params, body)
             }
-            Expr::Let(name, bind, body) => write!(f, "let {name} = {bind} in\n\t{body}"),
+            Expr::Let(name, bind, body) => write!(f, "let {} = {} in\n{}", name, bind, body),
         }
     }
 }
-
 #[derive(Debug)]
 pub struct Decl(pub String, pub Vec<String>, pub Expr);
 
 impl fmt::Display for Decl {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "let {} ", self.0)?;
-        write!(f, "[")?;
-
+        write!(f, "let {} [", self.0)?;
         let args: Vec<String> = self.1.iter().map(|t| format!("{}", t)).collect();
-        write!(f, "{}", args.join(","))?;
-
-        write!(f, "] ")?;
-        write!(f, "= ")?;
-        write!(f, "\n\t{}", self.2)
+        let args = args.join(", ");
+        let body = self.2.to_string().replace("\n", "\n\t");
+        write!(f, "{}] =\n\t{}", args, body)
     }
 }
 
-pub type Global = Vec<Decl>;
+#[derive(Debug, Clone)]
+pub struct State {
+    count: usize,
+}
+
+impl State {
+    pub fn new() -> State {
+        State { count: 0 }
+    }
+
+    pub fn fresh(&mut self) -> String {
+        let fresh = self.count;
+        self.count = self.count.checked_add(1).unwrap_or(0);
+
+        format!("anno_{}", fresh)
+    }
+}
 
 #[derive(Debug)]
 pub struct Context {
-    count: usize,
-    closures: Vec<Decl>,
+    state: State,
+    scope: HashMap<String, Expr>,
+    decls: Vec<Decl>,
 }
 
 impl Context {
     fn new() -> Context {
         Context {
-            count: 0,
-            closures: vec![],
+            state: State::new(),
+            scope: HashMap::new(),
+            decls: vec![],
         }
     }
 
-    fn fresh(&mut self) -> String {
-        self.count += 1;
-        format!("fresh_{}", self.count)
-    }
-
-    fn push_cls(&mut self, closure: Decl) {
-        self.closures.push(closure)
+    fn new_decl(&mut self, decl: Decl) {
+        self.decls.push(decl)
     }
 }
 
@@ -217,12 +225,18 @@ fn closure(globals: &[String], expr: Expr) -> Expr {
 fn lifting(expr: Expr, context: &mut Context) -> Expr {
     match expr {
         Expr::Int(int) => Expr::Int(int),
-        Expr::Var(sym) => Expr::Var(sym),
+        Expr::Var(sym) => {
+            if let Some(fresh) = context.scope.get(&sym) {
+                return fresh.clone();
+            }
+
+            Expr::Var(sym)
+        }
         Expr::Abs(params, body) => {
-            let fresh = context.fresh();
+            let fresh = context.state.fresh();
             let body = lifting(*body, context);
             let decl = Decl(fresh.clone(), params, body);
-            context.push_cls(decl);
+            context.new_decl(decl);
             Expr::Var(fresh)
         }
         Expr::App(fun, arg) => {
@@ -236,6 +250,13 @@ fn lifting(expr: Expr, context: &mut Context) -> Expr {
             Expr::Bop(bop, Box::new(left), Box::new(right))
         }
         Expr::Let(name, bind, body) => {
+            if let Expr::Abs(..) = *bind {
+                let bind = lifting(*bind, context);
+                context.scope.insert(name, bind);
+
+                return lifting(*body, context);
+            }
+
             let bind = lifting(*bind, context);
             let body = lifting(*body, context);
             Expr::Let(name, Box::new(bind), Box::new(body))
@@ -250,7 +271,7 @@ fn eliminate(globals: &[String], expr: Decl) -> Vec<Decl> {
     let clos_conv = closure(globals, body);
     let lift_conv = lifting(clos_conv, &mut context);
 
-    let mut decls = context.closures;
+    let mut decls = context.decls;
     let declation = Decl(name, variables, lift_conv);
 
     decls.push(declation);
@@ -269,29 +290,16 @@ pub fn run() {
             bop!((app!(λ!(incr), λ!(x))) + (app!(λ!(decr), λ!(x))))))
     );
 
-    // // input:
-    // let add [x] =
-    //     let incr = lambda a => a + 1 in
-    //     let decr = lambda a => a - 1 in
+    // input
+    // let add x =
+    //     let incr = fun x -> x + 1 in
+    //     let decr = fun x -> x - 1 in
     //     (incr x) + (decr x)
 
-    // // current output (works):
-    // let fresh_1 [a] =
-    //     a + 1
-    // let fresh_2 [a] =
-    //     a + 1
-    // let add [x] =
-    //     let incr = fresh_1 in
-    //     let decr = fresh_2 in
-    //     (incr x) + (decr x)
-
-    // // expected output:
-    // let fresh_1 [a] =
-    //     a + 1
-    // let fresh_2 [a] =
-    //     a + 1
-    // let add [x] =
-    //     (fresh_1 x) + (fresh_2 x)
+    // output
+    // let anno_0 a = a + 1
+    // let anno_1 a = a + 1
+    // let add x = (anno_0 x) + (anno_1 x)
 
     let tree = eliminate(&[], tree);
 
