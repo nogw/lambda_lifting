@@ -29,12 +29,11 @@ impl ClosureConv {
         }
     }
 
-    fn closure_decl(&mut self, decl: &Decl) -> Decl {
-        let Decl(name, params, body) = decl;
-
+    fn closure_decl(&mut self, Decl(name, params, body): &Decl) -> Decl {
         let body = self.closure(body);
         let name = name.to_owned();
         let params = params.to_owned();
+
         Decl(name, params, body)
     }
 
