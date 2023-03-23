@@ -1,5 +1,5 @@
 [package]
-name = "lifting"
+name = "opt"
 version = "0.1.0"
 edition = "2021"
 
