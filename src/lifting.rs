@@ -53,41 +53,6 @@ impl fmt::Display for Decl {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct State {
-    count: usize,
-}
-
-impl State {
-    pub fn new() -> State {
-        State { count: 0 }
-    }
-
-    pub fn fresh(&mut self) -> String {
-        let fresh = self.count;
-        self.count = self.count.checked_add(1).unwrap_or(0);
-
-        format!("anno_{}", fresh)
-    }
-}
-
-#[derive(Debug)]
-pub struct Context {
-    state: State,
-    scope: HashMap<String, Expr>,
-    decls: Vec<Decl>,
-}
-
-impl Context {
-    fn new() -> Context {
-        Context {
-            state: State::new(),
-            scope: HashMap::new(),
-            decls: vec![],
-        }
-    }
-}
-
 macro_rules! lam {
     (($($params:ident),* $(,)?) => $body:expr) => {
         Expr::Abs( vec![$(stringify!($params).to_owned()),*], Box::new($body))
@@ -132,6 +97,41 @@ macro_rules! decl {
     (let $name:ident [$($params:ident),* $(,)?] = $body:expr) => {
         Decl(stringify!($name).to_owned(), vec![$(stringify!($params).to_owned()),*], $body)
     };
+}
+
+#[derive(Debug, Clone)]
+pub struct State {
+    count: usize,
+}
+
+impl State {
+    pub fn new() -> State {
+        State { count: 0 }
+    }
+
+    pub fn fresh(&mut self) -> String {
+        let fresh = self.count;
+        self.count = self.count.checked_add(1).unwrap_or(0);
+
+        format!("anno_{}", fresh)
+    }
+}
+
+#[derive(Debug)]
+pub struct Context {
+    state: State,
+    scope: HashMap<String, Expr>,
+    decls: Vec<Decl>,
+}
+
+impl Context {
+    fn new() -> Context {
+        Context {
+            state: State::new(),
+            scope: HashMap::new(),
+            decls: vec![],
+        }
+    }
 }
 
 fn difference(free: &HashSet<String>, remove: &Vec<String>) -> HashSet<String> {
